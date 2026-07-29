@@ -26,20 +26,12 @@ function note(text, kind = '') {
 }
 
 const LOCAL_COPY = {
-  ready: ['Qwen 0.5B ready', 'ok'],
+  ready: ['AI ready', 'ok'],
   downloading: ['downloading…', 'warn'],
   loading: ['loading…', 'warn'],
   idle: ['not downloaded', 'warn'],
   'no-webgpu': ['no WebGPU — stats only', 'bad'],
   error: ['failed — stats only', 'bad'],
-};
-
-const NANO_COPY = {
-  available: ['Gemini Nano ready', 'ok'],
-  downloadable: ['Nano needs download', 'warn'],
-  downloading: ['Nano downloading…', 'warn'],
-  unavailable: ['not on this device', 'bad'],
-  unsupported: ['Chrome too old', 'bad'],
 };
 
 /** Ask the page whether the content script is alive. */
@@ -88,31 +80,23 @@ async function refresh() {
     else if (!res.ok) $('school').textContent = 'school lookup failed';
   });
 
-  const engine = settingsRes.ok ? settingsRes.result.engine : 'local';
+  const aiOn = settingsRes.ok ? settingsRes.result.aiSummaries !== false : true;
   const ai = await send({ type: 'AI_STATUS' });
 
   if (!ai.ok) {
     setPill($('ai'), 'unavailable', 'bad');
-  } else if (engine === 'off') {
+  } else if (!aiOn) {
     setPill($('ai'), 'statistics only', 'ok');
-  } else if (engine === 'nano') {
-    const [text, kind] = NANO_COPY[ai.result.nano?.availability] || ['unknown', 'warn'];
-    setPill($('ai'), text, kind);
   } else {
     const l = ai.result.local || {};
     const [text, kind] = LOCAL_COPY[l.status] || ['unknown', 'warn'];
     setPill($('ai'), text, kind);
 
     $('modelRow').style.display = 'flex';
-    if (l.status === 'downloading') {
-      $('modelState').textContent = `${l.pct || 0}%`;
-    } else if (l.status === 'ready') {
-      $('modelState').textContent = 'cached, offline';
-    } else if (!l.webgpu) {
-      $('modelState').textContent = 'WebGPU not available';
-    } else {
-      $('modelState').textContent = 'not downloaded yet';
-    }
+    if (l.status === 'downloading') $('modelState').textContent = `${l.pct || 0}%`;
+    else if (l.status === 'ready') $('modelState').textContent = 'cached, offline';
+    else if (!l.webgpu) $('modelState').textContent = 'WebGPU not available';
+    else $('modelState').textContent = 'not downloaded yet';
 
     const needsDownload = l.webgpu && l.status !== 'ready' && l.status !== 'downloading';
     $('download').style.display = needsDownload ? 'block' : 'none';

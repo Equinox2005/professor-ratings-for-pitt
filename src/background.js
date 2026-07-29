@@ -314,9 +314,8 @@ async function aiStatus() {
 
 /** Explicit user action from the popup: pull the model down now. */
 async function downloadModel() {
-  const settings = await getSettings();
   await setSettings({ autoDownloadModel: true });
-  const res = await askOffscreen({ type: 'WARMUP', engine: settings.engine });
+  const res = await askOffscreen({ type: 'WARMUP' });
   if (res?.status === 'ok') modelReady = true;
   return res;
 }
@@ -334,9 +333,9 @@ async function summarize(teacher) {
   const analysis = heuristicSummary(teacher);
   const base = { status: 'ok', source: 'heuristic', summary: analysis };
 
-  if (settings.engine === 'off') return base;
+  if (!settings.aiSummaries) return base;
 
-  const key = `prose:${settings.engine}:${teacher.id}:${teacher.numRatings}`;
+  const key = `prose:qwen:${teacher.id}:${teacher.numRatings}`;
   const cached = await cache.get(key);
   if (cached) return { ...base, source: cached.engine, prose: cached.text };
 
@@ -344,7 +343,7 @@ async function summarize(teacher) {
   // popup. autoDownloadModel is set once the user has consented, and persists;
   // modelReady is only an in-memory fast path (the offscreen document unloads
   // itself when idle, so it can go stale in either direction).
-  if (settings.engine === 'local' && !settings.autoDownloadModel) {
+  if (!settings.autoDownloadModel) {
     return base;
   }
 
@@ -352,7 +351,6 @@ async function summarize(teacher) {
     try {
       const res = await askOffscreen({
         type: 'SUMMARIZE',
-        engine: settings.engine,
         teacher: slimTeacher(teacher),
         analysis,
       });
@@ -439,7 +437,6 @@ const HANDLERS = {
     return DEFAULTS;
   },
   RESOLVE_SCHOOL: ({ force }) => resolveSchools(force),
-  SEARCH_SCHOOLS: ({ text }) => schedule(() => rmp.searchSchools(text)),
   CACHE_STATS: () => cache.stats(),
   CLEAR_CACHE: async () => {
     await cache.clear();

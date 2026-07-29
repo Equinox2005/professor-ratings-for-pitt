@@ -430,6 +430,7 @@
 
   function closePanel() {
     if (openPanel) {
+      try { openPanel.__prbResizeObserver?.disconnect(); } catch { /* ok */ }
       openPanel.remove();
       openPanel = null;
     }
@@ -514,26 +515,57 @@
     openPanel = panel;
     position(panel, badge);
 
+    // Content streams in after open; keep the panel inside the viewport as it
+    // grows rather than positioning once against its empty loading state.
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => position(panel, badge));
+      ro.observe(panel);
+      panel.__prbResizeObserver = ro;
+    }
+
     panel.querySelector(`.${NS}-close`).addEventListener('click', closePanel);
     panel.addEventListener('click', (e) => e.stopPropagation());
 
     loadDetailThenSummary(panel, t);
   }
 
+  const PANEL_MARGIN = 12;
+  const PANEL_GAP = 8;
+
+  /**
+   * Place the panel and bound its height to whichever side of the badge has
+   * more room. Called on open AND whenever the panel resizes: the summary and
+   * comments arrive asynchronously, so a panel sized for its loading state
+   * grows afterwards and used to run off the bottom of the screen.
+   */
   function position(panel, badge) {
+    if (!panel.isConnected || !badge.isConnected) return;
+
     const r = badge.getBoundingClientRect();
+    const vh = window.innerHeight;
+    const vw = window.innerWidth;
+
+    const spaceBelow = vh - r.bottom - PANEL_GAP - PANEL_MARGIN;
+    const spaceAbove = r.top - PANEL_GAP - PANEL_MARGIN;
+    const below = spaceBelow >= spaceAbove;
+    const available = Math.max(below ? spaceBelow : spaceAbove, 160);
+
+    // Cap height to the room actually available, so the panel scrolls
+    // internally instead of overflowing the viewport.
+    panel.style.setProperty('max-height', `${Math.floor(available)}px`, 'important');
+
+    const h = Math.min(panel.offsetHeight || 300, available);
     const w = panel.offsetWidth || 340;
-    const h = panel.offsetHeight || 300;
 
     let left = r.left;
-    let top = r.bottom + 8;
+    if (left + w > vw - PANEL_MARGIN) left = vw - w - PANEL_MARGIN;
+    if (left < PANEL_MARGIN) left = PANEL_MARGIN;
 
-    if (left + w > window.innerWidth - 12) left = window.innerWidth - w - 12;
-    if (left < 12) left = 12;
-    if (top + h > window.innerHeight - 12) top = Math.max(12, r.top - h - 8);
+    let top = below ? r.bottom + PANEL_GAP : r.top - h - PANEL_GAP;
+    top = Math.max(PANEL_MARGIN, Math.min(top, vh - h - PANEL_MARGIN));
 
-    panel.style.left = `${left}px`;
-    panel.style.top = `${top}px`;
+    panel.style.setProperty('left', `${left}px`, 'important');
+    panel.style.setProperty('top', `${top}px`, 'important');
   }
 
   function renderHeuristicSummary(s, prose, source) {
@@ -644,11 +676,7 @@
       if (body) {
         box.dataset.state = 'ok';
         const engineLabel =
-          data.source === 'local'
-            ? 'Written by Qwen2.5-0.5B on your machine'
-            : data.source === 'nano'
-            ? 'Written by Gemini Nano on your machine'
-            : null;
+          data.source === 'local' ? 'Written by Qwen2.5-0.5B on your machine' : null;
         const foot = engineLabel
           ? `${engineLabel} · figures computed from ${data.summary.reviewsAnalyzed} reviews`
           : `Computed from ${data.summary.reviewsAnalyzed} reviews — quotes are verbatim`;

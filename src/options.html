@@ -64,38 +64,13 @@
 
     <div class="wrap">
       <div class="card">
-        <h2>School</h2>
-        <label for="schoolName">RateMyProfessors school</label>
-        <p class="desc">Lookups cover this school and all of its regional campuses (RateMyProfessors lists each campus separately). Currently resolved to: <strong id="resolved">not yet resolved</strong></p>
-        <div class="row">
-          <input type="text" id="schoolName" />
-          <button id="findSchool">Find</button>
-        </div>
-        <div class="schools" id="schoolResults"></div>
-      </div>
-
-      <div class="card">
         <h2>Summaries</h2>
-        <p class="desc">Every figure in the panel is computed locally from the ratings and is always exact. The engine below only decides whether a model rewrites those figures as a readable paragraph.</p>
+        <p class="desc">The ratings, aspect breakdown, per-course figures, and quotes are always computed on your machine and are always exact. This setting only controls whether a small language model also writes them up as a paragraph.</p>
 
         <div class="check">
-          <input type="radio" name="engine" id="engineLocal" value="local" />
-          <label for="engineLocal">Qwen2.5-0.5B on this machine<br />
-            <span class="desc" style="font-weight:400">Runs offline through WebGPU. One-time ~300 MB download, started from the toolbar popup. Needs a GPU that supports WebGPU.</span>
-          </label>
-        </div>
-
-        <div class="check">
-          <input type="radio" name="engine" id="engineNano" value="nano" />
-          <label for="engineNano">Chrome's built-in Gemini Nano<br />
-            <span class="desc" style="font-weight:400">Better writing, no download, but requires roughly 22 GB free disk and 16 GB RAM. Most machines do not qualify.</span>
-          </label>
-        </div>
-
-        <div class="check">
-          <input type="radio" name="engine" id="engineOff" value="off" />
-          <label for="engineOff">No model — statistics and quotes only<br />
-            <span class="desc" style="font-weight:400">Fastest, zero download. You still get aspect sentiment, per-course breakdowns, trend, and verbatim quotes.</span>
+          <input type="checkbox" id="aiSummaries" />
+          <label for="aiSummaries">Write a summary paragraph with on-device AI<br />
+            <span class="desc" style="font-weight:400">Qwen2.5-0.5B running locally through WebGPU. One-time ~300&nbsp;MB download, started from the toolbar popup. Nothing is sent anywhere. Turn this off to keep the statistics and quotes only.</span>
           </label>
         </div>
 
@@ -121,14 +96,8 @@
       </div>
 
       <div class="card">
-        <h2>Instructor field selectors</h2>
-        <p class="desc">Added by the "Point at the instructor field" button in the toolbar popup. The built-in detection runs regardless; these just make it more reliable.</p>
-        <ul class="selectors" id="selectorList"></ul>
-      </div>
-
-      <div class="card">
         <h2>Data</h2>
-        <p class="desc">Ratings are cached for two weeks, summaries for two months. Everything lives in this browser only.</p>
+        <p class="desc">Ratings are cached for two weeks, summaries for two months. Everything lives in this browser only. Resetting also clears any instructor-field selector saved by the popup's picker.</p>
         <div class="row">
           <button class="danger" id="clearCache">Clear cached ratings</button>
           <button class="danger" id="reset">Reset all settings</button>

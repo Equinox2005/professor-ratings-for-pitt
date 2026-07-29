@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Professor Ratings for Pitt",
-  "version": "1.3.1",
+  "version": "1.4.1",
   "description": "RateMyProfessors ratings and on-device AI review summaries inside Pitt class search. Unofficial; not affiliated with Pitt or RMP.",
   "minimum_chrome_version": "128",
   "permissions": [
@@ -50,5 +50,5 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
-  "homepage_url": "https://github.com/Equinox2005/professor-ratings-for-pitt"
+  "homepage_url": "https://github.com/"
 }

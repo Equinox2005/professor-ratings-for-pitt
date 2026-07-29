@@ -4,9 +4,10 @@ export const DEFAULTS = {
   schoolName: 'University of Pittsburgh',
   schools: [],             // [{id, name}] -- every campus in the family
   schoolLabel: '',         // human-readable, for the options page
-  // 'local' = Qwen2.5-0.5B on your machine, 'nano' = Chrome's Gemini Nano,
-  // 'off' = statistics and quotes only. All paths fall back to 'off' on failure.
-  engine: 'local',
+  // Whether Qwen2.5-0.5B writes the summary paragraph. Off still gives the
+  // full statistics, aspect breakdown, and verbatim quotes -- those are always
+  // computed locally and never depend on a model.
+  aiSummaries: true,
   autoDownloadModel: false, // require an explicit click before a ~300 MB pull
   minRatingsForSummary: 3, // don't summarize 1 comment, it's just the comment
   customSelectors: [],     // CSS selectors added by the element picker

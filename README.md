@@ -44,16 +44,11 @@ The engine setting only decides whether a language model rewrites those figures
 as a readable paragraph. A model is never asked to read raw reviews, because at
 these sizes they are unreliable at extraction but adequate at rephrasing.
 
-Three engines, set in Settings:
-
-| Engine | Requirements | Notes |
-| --- | --- | --- |
-| `local` (default) | WebGPU, ~300 MB one-time download | Qwen2.5-0.5B-Instruct via Transformers.js. Fully offline after download. |
-| `nano` | ~22 GB free disk, 16 GB RAM | Chrome's Gemini Nano. Better writing, but most machines don't qualify. |
-| `off` | none | Statistics and verbatim quotes only. |
-
-All three fall back to `off` behaviour on any failure, so the panel always
-shows something.
+Summaries are written by **Qwen2.5-0.5B** running locally through WebGPU. The
+model is a ~300 MB one-time download and works offline afterwards. If WebGPU
+isn't available, or you turn summaries off in Settings, you still get the
+statistics, aspect breakdown, per-course figures, and verbatim quotes — those
+are always computed locally and never depend on a model.
 
 The model download is never automatic. Open the toolbar popup and click
 **Download model**; progress appears there. Weights come from Hugging Face and

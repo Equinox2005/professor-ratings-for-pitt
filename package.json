@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "jsdom": "^30.0.1"
+  }
+}

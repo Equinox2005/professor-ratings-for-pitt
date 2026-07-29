@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Professor Ratings for Pitt — Settings</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        margin: 0; padding: 0 0 48px;
+        font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #1b1f24; background: #f6f8fb;
+      }
+      header { background: #003594; color: #fff; padding: 22px 0; }
+      .wrap { max-width: 680px; margin: 0 auto; padding: 0 20px; }
+      h1 { margin: 0; font-size: 19px; }
+      .sub { color: #c3d0e8; font-size: 13px; margin-top: 3px; }
+      .card {
+        background: #fff; border: 1px solid #e2e6ec; border-radius: 10px;
+        padding: 18px 20px; margin-top: 18px;
+      }
+      h2 {
+        font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+        color: #6b7480; margin: 0 0 12px;
+      }
+      label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+      .desc { color: #6b7480; font-size: 12.5px; margin: 0 0 10px; }
+      input[type="text"], input[type="number"] {
+        width: 100%; box-sizing: border-box; padding: 8px 10px;
+        border: 1px solid #d5dae0; border-radius: 6px; font: inherit; font-size: 13px;
+      }
+      .check { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 14px; }
+      .check input { margin-top: 3px; }
+      .check label { margin: 0; }
+      button {
+        padding: 8px 15px; border-radius: 6px; border: 1px solid #d5dae0;
+        background: #fff; font: 600 13px/1 inherit; cursor: pointer;
+      }
+      button:hover { background: #f6f8fb; }
+      button.primary { background: #003594; border-color: #003594; color: #fff; }
+      button.danger { color: #b32626; border-color: #e5b0b0; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .selectors { margin: 0; padding: 0; list-style: none; }
+      .selectors li {
+        display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+        background: #f6f8fb; border: 1px solid #e2e6ec; border-radius: 6px;
+        padding: 6px 8px; margin-bottom: 6px; word-break: break-all;
+      }
+      .selectors button { padding: 3px 8px; font-size: 11px; flex: none; }
+      .empty { color: #8b939d; font-size: 12.5px; font-style: italic; }
+      .status { margin-top: 12px; font-size: 12.5px; color: #1d7a45; min-height: 18px; }
+      .status.err { color: #b32626; }
+      .schools { margin-top: 8px; }
+      .schools button { display: block; width: 100%; text-align: left; margin-bottom: 5px; font-weight: 400; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <h1>Professor Ratings for Pitt</h1>
+        <div class="sub">Settings</div>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <div class="card">
+        <h2>School</h2>
+        <label for="schoolName">RateMyProfessors school</label>
+        <p class="desc">Lookups cover this school and all of its regional campuses (RateMyProfessors lists each campus separately). Currently resolved to: <strong id="resolved">not yet resolved</strong></p>
+        <div class="row">
+          <input type="text" id="schoolName" />
+          <button id="findSchool">Find</button>
+        </div>
+        <div class="schools" id="schoolResults"></div>
+      </div>
+
+      <div class="card">
+        <h2>Summaries</h2>
+        <p class="desc">Every figure in the panel is computed locally from the ratings and is always exact. The engine below only decides whether a model rewrites those figures as a readable paragraph.</p>
+
+        <div class="check">
+          <input type="radio" name="engine" id="engineLocal" value="local" />
+          <label for="engineLocal">Qwen2.5-0.5B on this machine<br />
+            <span class="desc" style="font-weight:400">Runs offline through WebGPU. One-time ~300 MB download, started from the toolbar popup. Needs a GPU that supports WebGPU.</span>
+          </label>
+        </div>
+
+        <div class="check">
+          <input type="radio" name="engine" id="engineNano" value="nano" />
+          <label for="engineNano">Chrome's built-in Gemini Nano<br />
+            <span class="desc" style="font-weight:400">Better writing, no download, but requires roughly 22 GB free disk and 16 GB RAM. Most machines do not qualify.</span>
+          </label>
+        </div>
+
+        <div class="check">
+          <input type="radio" name="engine" id="engineOff" value="off" />
+          <label for="engineOff">No model — statistics and quotes only<br />
+            <span class="desc" style="font-weight:400">Fastest, zero download. You still get aspect sentiment, per-course breakdowns, trend, and verbatim quotes.</span>
+          </label>
+        </div>
+
+        <label for="minRatings">Minimum reviews before summarizing</label>
+        <p class="desc">Below this, a summary would just be restating one comment.</p>
+        <input type="number" id="minRatings" min="1" max="20" style="width:100px" />
+      </div>
+
+      <div class="card">
+        <h2>Display</h2>
+        <div class="check">
+          <input type="checkbox" id="hideWhenNotFound" />
+          <label for="hideWhenNotFound">Hide the badge when no professor is found<br />
+            <span class="desc" style="font-weight:400">Off by default so you can tell "unrated" apart from "the extension didn't run".</span>
+          </label>
+        </div>
+        <div class="check">
+          <input type="checkbox" id="debug" />
+          <label for="debug">Log detection details to the console<br />
+            <span class="desc" style="font-weight:400">Turn this on if badges land in the wrong place.</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Instructor field selectors</h2>
+        <p class="desc">Added by the "Point at the instructor field" button in the toolbar popup. The built-in detection runs regardless; these just make it more reliable.</p>
+        <ul class="selectors" id="selectorList"></ul>
+      </div>
+
+      <div class="card">
+        <h2>Data</h2>
+        <p class="desc">Ratings are cached for two weeks, summaries for two months. Everything lives in this browser only.</p>
+        <div class="row">
+          <button class="danger" id="clearCache">Clear cached ratings</button>
+          <button class="danger" id="reset">Reset all settings</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:18px">
+        <button class="primary" id="save">Save changes</button>
+        <span class="status" id="status"></span>
+      </div>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: light; }
+      body {
+        width: 318px; margin: 0;
+        font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #1b1f24; background: #fff;
+      }
+      header { background: #003594; color: #fff; padding: 12px 14px; }
+      h1 { font-size: 14px; margin: 0; font-weight: 700; }
+      .sub { font-size: 11px; color: #c3d0e8; margin-top: 2px; }
+      section { padding: 11px 14px; border-bottom: 1px solid #eef1f6; }
+      .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+      .row + .row { margin-top: 6px; }
+      .label { color: #6b7480; font-size: 12px; flex: none; }
+      .value { font-weight: 600; font-size: 12px; text-align: right; }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px; color: #3c4650; word-break: break-all; text-align: right;
+      }
+      .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; flex: none; }
+      .pill.ok { background: #e4f4e9; color: #1d7a45; }
+      .pill.warn { background: #fdf3dd; color: #8a5f0a; }
+      .pill.bad { background: #fbe6e6; color: #b32626; }
+      .note {
+        margin: 10px 14px 0; padding: 8px 10px; border-radius: 6px;
+        background: #fdf3dd; color: #6b4c07; font-size: 11.5px;
+      }
+      .note.err { background: #fbe6e6; color: #8f1f1f; }
+      .note.hidden { display: none; }
+      button {
+        width: 100%; padding: 8px 10px; margin-top: 7px;
+        border: 1px solid #d5dae0; border-radius: 6px;
+        background: #fff; color: #1b1f24; font: 600 12px/1 inherit; cursor: pointer;
+      }
+      button:hover { background: #f6f8fb; }
+      button.primary { background: #003594; border-color: #003594; color: #fff; }
+      button.primary:hover { background: #00297a; }
+      .hint { font-size: 11px; color: #8b939d; margin-top: 6px; }
+      footer { padding: 10px 14px; display: flex; justify-content: space-between; }
+      a { color: #003594; font-size: 11px; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Professor Ratings for Pitt</h1>
+      <div class="sub" id="school">Resolving school…</div>
+    </header>
+
+    <div class="note hidden" id="note"></div>
+
+    <section>
+      <div class="row"><span class="label">Page</span><span class="mono" id="url">–</span></div>
+      <div class="row"><span class="label">Coverage</span><span id="site" class="pill warn">checking…</span></div>
+      <div class="row"><span class="label">Content script</span><span id="cs" class="pill warn">checking…</span></div>
+      <div class="row"><span class="label">Badges on page</span><span class="value" id="count">–</span></div>
+    </section>
+
+    <section>
+      <div class="row"><span class="label">Summary engine</span><span id="ai" class="pill warn">checking…</span></div>
+      <div class="row" id="modelRow" style="display:none">
+        <span class="label">Local model</span><span class="value" id="modelState">–</span>
+      </div>
+      <button id="download" style="display:none">Download model (~300 MB, one time)</button>
+      <div class="row"><span class="label">Cached professors</span><span class="value" id="cache">–</span></div>
+    </section>
+
+    <section>
+      <button class="primary" id="rank">Open professor ranking</button>
+      <button id="pick">Point at the instructor field</button>
+      <div class="hint">Click an instructor name once. The selector is saved and the page reloads.</div>
+      <button id="rescan">Rescan page</button>
+      <button id="clear">Clear cached ratings</button>
+      <button id="copy">Copy diagnostics</button>
+    </section>
+
+    <footer>
+      <a id="options">Settings</a>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

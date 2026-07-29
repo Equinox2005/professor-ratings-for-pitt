@@ -50,5 +50,5 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
-  "homepage_url": "https://github.com/"
+  "homepage_url": "https://github.com/Equinox2005/professor-ratings-for-pitt"
 }

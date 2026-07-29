@@ -55,7 +55,7 @@ extension's popup ("Clear cached ratings") or by uninstalling the extension.
 
 ## Contact
 
-Questions about this policy: [your email or GitHub issues URL]
+Questions about this policy: https://github.com/Equinox2005/professor-ratings-for-pitt/issues
 
 ## Changes
 

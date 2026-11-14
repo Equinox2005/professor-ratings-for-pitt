@@ -1,10 +1,9 @@
 /**
  * Non-model summarizer.
  *
- * The previous version described the reviews ("reviewers often mention exams")
- * without characterizing them. This one does four things that carry real
- * information and still cannot hallucinate, because every claim is either a
- * counted statistic or a verbatim quote:
+ * It does four things that carry real information and still cannot
+ * hallucinate, because every claim is either a counted statistic or a
+ * verbatim quote:
  *
  *   1. Aspect sentiment  -- for each topic, is the sentiment positive or
  *                           negative, how many reviewers said so, and one
@@ -53,6 +52,8 @@ const NEGATIVE = new Map(Object.entries({
 
 const NEGATORS = new Set(["not", "no", "never", "isn't", "isnt", "wasn't", "wasnt",
   "doesn't", "doesnt", "didn't", "didnt", "won't", "wont", "can't", "cant",
+  "don't", "dont", "aren't", "arent", "weren't", "werent", "wouldn't", "wouldnt",
+  "couldn't", "couldnt", "shouldn't", "shouldnt", "haven't", "havent", "hasn't", "hasnt",
   "cannot", "hardly", "barely", "rarely", "without", "lacks", "lacked"]);
 
 const STOPWORDS = new Set(['the','a','an','and','or','but','if','then','than','so','because',
@@ -72,7 +73,7 @@ const PHRASES = [
   [/problem\s+sets?/gi, 'homework'],
   [/group\s+projects?/gi, 'project'],
   [/waste\s+of\s+time/gi, 'useless'],
-  [/hard\s+to\s+follow/gi, 'confusing'],
+  [/hard\s+to\s+(follow|understand)/gi, 'confusing'],
   [/all\s+over\s+the\s+place/gi, 'disorganized'],
 ];
 
@@ -81,7 +82,8 @@ const PHRASES = [
 /* ------------------------------------------------------------------ */
 
 function normalizeText(s) {
-  let t = String(s || '');
+  // Phone keyboards type ’ for the apostrophe; the tokenizer only knows '.
+  let t = String(s || '').replace(/[‘’]/g, "'");
   for (const [re, rep] of PHRASES) t = t.replace(re, rep);
   return t;
 }
@@ -265,13 +267,30 @@ function ratingQuality(r) {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
+/**
+ * Students type one course several ways: "CS0445", "cs 0445", "CS445", "0445".
+ * Case, spaces and punctuation are dropped, and the number is compared without
+ * its leading zeros, so "CS007" and "CS0007" share a key. Different letters,
+ * a different number or anything after the number is a different course.
+ */
+function courseKey(raw) {
+  const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const m = code.match(/^([A-Z]*)(\d+)(.*)$/);
+  if (!m) return { code, key: code };
+  const number = m[2].replace(/^0+(?=\d)/, '');
+  return { code, key: `${m[1]}|${number}|${m[3]}`, letters: m[1], number, tail: m[3] };
+}
+
 function byCourse(ratings) {
   const groups = new Map();
   for (const r of ratings) {
-    const code = String(r.class || '').trim().toUpperCase();
-    if (!code || code === '-') continue;
-    if (!groups.has(code)) groups.set(code, { code, n: 0, sum: 0, scored: 0, diffSum: 0, diffN: 0 });
-    const g = groups.get(code);
+    const { code, key, letters, number, tail } = courseKey(r.class);
+    if (!code) continue;
+    if (!groups.has(key)) {
+      groups.set(key, { letters, number, tail, spellings: new Map(), n: 0, sum: 0, scored: 0, diffSum: 0, diffN: 0 });
+    }
+    const g = groups.get(key);
+    g.spellings.set(code, (g.spellings.get(code) || 0) + 1);
     g.n += 1;
     const q = ratingQuality(r);
     if (q !== null) { g.sum += q; g.scored += 1; }
@@ -281,10 +300,26 @@ function byCourse(ratings) {
     }
   }
 
+  // A bare number ("0445") belongs with the lettered code that has the same
+  // number, but only when there is exactly one. With "CS0401" and "CMPINF0401"
+  // both present it could be either, so it keeps its own line.
+  for (const [key, g] of groups) {
+    if (g.letters !== '' || g.tail !== '') continue;
+    const homes = Array.from(groups.values()).filter((h) => h.letters && h.tail === '' && h.number === g.number);
+    if (homes.length !== 1) continue;
+    for (const field of ['n', 'sum', 'scored', 'diffSum', 'diffN']) homes[0][field] += g[field];
+    groups.delete(key);
+  }
+
+  // Show the spelling most reviews used. On a tie the longer one wins, which
+  // is the zero-padded catalog number.
+  const shown = (g) =>
+    Array.from(g.spellings).sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0][0];
+
   return Array.from(groups.values())
     .filter((g) => g.n >= 2)
     .map((g) => ({
-      code: g.code,
+      code: shown(g),
       count: g.n,
       avg: g.scored ? Number((g.sum / g.scored).toFixed(1)) : null,
       difficulty: g.diffN ? Number((g.diffSum / g.diffN).toFixed(1)) : null,
@@ -321,6 +356,9 @@ function trend(ratings) {
 /* Headline                                                            */
 /* ------------------------------------------------------------------ */
 
+// "Exams draw", "Grading draws".
+const draws = (label) => (label.endsWith('s') ? 'draw' : 'draws');
+
 function headline(teacher, aspects) {
   const r = teacher.avgRating;
   const wta = teacher.wouldTakeAgainPercent;
@@ -342,7 +380,7 @@ function headline(teacher, aspects) {
   if (wta !== null && wta !== undefined) base += `, ${wta}% would retake`;
   base += '.';
 
-  if (best && worst) base += ` ${best.label} draw praise, ${worst.label.toLowerCase()} draw complaints.`;
+  if (best && worst) base += ` ${best.label} ${draws(best.label)} praise, ${worst.label.toLowerCase()} ${draws(worst.label)} complaints.`;
   else if (worst) base += ` Main complaint is ${worst.label.toLowerCase()}.`;
   else if (best) base += ` Most praised: ${best.label.toLowerCase()}.`;
 

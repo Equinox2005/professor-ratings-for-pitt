@@ -162,6 +162,23 @@ eq(N.splitInstructors('van der Berg, Anna'),
    ['van der Berg, Anna'], 'split: particle surname Last-First stays one person');
 eq(N.splitInstructors('Smith, John A'),
    ['Smith, John A'], 'split: Last, First Middle still one person');
+eq(N.splitInstructors('Eric Beeko, Grace Mkomwa, Filipo Lubua, Gamby Camara'),
+   ['Eric Beeko', 'Grace Mkomwa', 'Filipo Lubua', 'Gamby Camara'], 'split: four full names joined by commas');
+
+
+/* ---- surnames that look like degrees or titles ---- */
+eq(N.parseName('Ma, Jian')?.last, 'ma', 'parse: Ma, Jian keeps the surname');
+eq([N.parseName('Jian Ma')?.first, N.parseName('Jian Ma')?.last], ['jian', 'ma'], 'parse: Jian Ma');
+eq(N.parseName('Amadou Ba')?.last, 'ba', 'parse: Amadou Ba');
+eq(N.parseName('Kevin Hon')?.last, 'hon', 'parse: Kevin Hon');
+eq(N.parseName('Dr. John Smith PhD')?.first, 'john', 'parse: title dot does not become the first name');
+
+
+/* ---- cache key ---- */
+ok(N.cacheKey(N.parseName('Rebecca Hollis'), 's') !== N.cacheKey(N.parseName('Robert Hollis'), 's'),
+   'cache key: same surname and initial are two people');
+eq(N.cacheKey(N.parseName('Hollis, Robert'), 's'), N.cacheKey(N.parseName('Robert Hollis'), 's'),
+   'cache key: Last, First and First Last are the same person');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

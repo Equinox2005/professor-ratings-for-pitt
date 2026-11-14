@@ -5,15 +5,15 @@
  *
  * A 0.5B model is bad at reading sixteen reviews and extracting what matters.
  * It is considerably better at rephrasing facts it has been handed. So the
- * heuristic analyzer in summarize.js still does all the extraction — aspect
- * sentiment, per-course splits, trend — and the model only turns that
+ * heuristic analyzer in summarize.js still does all the extraction (aspect
+ * sentiment, per-course splits, trend) and the model only turns that
  * structured result into readable prose. That keeps the numbers exact and
  * confines the model to the one job it can actually do at this size.
  *
  * Everything runs offline after the first download. Nothing is sent anywhere.
  */
 
-import { pipeline, env } from '../vendor/transformers.web.min.js';
+import { pipeline, env } from '../../vendor/transformers.min.js';
 
 export const MODEL_ID = 'onnx-community/Qwen2.5-0.5B-Instruct';
 
@@ -51,7 +51,7 @@ export async function load(onProgress) {
     const gpu = await webgpuAvailable();
     if (!gpu) {
       progress.status = 'no-webgpu';
-      throw new Error('WebGPU unavailable — this GPU or driver cannot run the model');
+      throw new Error('WebGPU unavailable: this GPU or driver cannot run the model');
     }
 
     progress.status = 'loading';
@@ -64,9 +64,6 @@ export async function load(onProgress) {
           progress.status = 'downloading';
           progress.pct = Math.round((p.loaded / p.total) * 100);
           progress.file = p.file || '';
-        } else if (p.status === 'ready' || p.status === 'done') {
-          progress.status = 'ready';
-          progress.pct = 100;
         }
         if (onProgress) onProgress({ ...progress });
       },

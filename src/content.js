@@ -1,9 +1,10 @@
-/* Professor Ratings for Pitt — content script.
+/* Professor Ratings for Pitt: content script.
  *
  * Detection is deliberately layered. PeopleSoft renders the instructor field
  * differently in the search list, the class detail view, and inside iframes,
- * so a single selector would break constantly. We try four strategies and
- * union the results; the element picker adds a fifth that always wins.
+ * so a single selector would break constantly. We try five strategies and
+ * union the results, with a geometric sixth for when nothing else matches.
+ * Selectors saved by the element picker run first.
  */
 
 (() => {
@@ -87,6 +88,9 @@
     // Already badged, or an ancestor of something we badged -- its textContent
     // would include our own score text and corrupt the name.
     if (el.querySelector(`.${NS}-badge`)) return;
+    // Inside a cell that already carries its own badge (a saved picker
+    // selector can point at the span within a cell the defaults found first).
+    if (el.parentElement?.closest(`[data-${NS}-done]`)?.querySelector(`:scope > .${NS}-badge`)) return;
     if (!plausible(text)) return;
     if (map.has(el)) return;
     map.set(el, text.trim());
@@ -379,6 +383,25 @@
     return badge;
   }
 
+  /**
+   * The class search draws every cell on one line and clips it with an
+   * ellipsis. The page's own text and styles are left as they are. This space
+   * is the one place that line may break (see .prb-gap), so the badge sits
+   * after a name it fits beside and drops under one it does not.
+   */
+  function makeGap() {
+    const gap = document.createElement('span');
+    gap.className = `${NS}-gap`;
+    gap.textContent = ' ';
+    return gap;
+  }
+
+  function dropBadge(badge) {
+    const gap = badge.previousSibling;
+    if (gap instanceof Element && gap.classList.contains(`${NS}-gap`)) gap.remove();
+    badge.remove();
+  }
+
   function paintBadge(badge, result) {
     badge.__prbResult = result;
     clearTimeout(badge.__prbTimeout);
@@ -396,15 +419,15 @@
         'aria-label',
         `${t.firstName} ${t.lastName}: ${score} out of 5 from ${t.numRatings} ratings`
       );
-      badge.title = `${t.firstName} ${t.lastName} — ${score}/5 (${t.numRatings} ratings)${
-        result.confidence === 'low' ? ' — uncertain match' : ''
+      badge.title = `${t.firstName} ${t.lastName}: ${score}/5 (${t.numRatings} ratings)${
+        result.confidence === 'low' ? ', uncertain match' : ''
       }\nClick for summary and comments`;
       return;
     }
 
     if (result.status === 'notfound') {
       if (settings.hideWhenNotFound) {
-        badge.remove();
+        dropBadge(badge);
         return;
       }
       badge.dataset.state = 'notfound';
@@ -415,13 +438,14 @@
     }
 
     if (result.status === 'placeholder' || result.status === 'unparseable') {
-      badge.remove();
+      dropBadge(badge);
       return;
     }
 
     badge.dataset.state = 'error';
     badge.querySelector(`.${NS}-score`).textContent = 'retry';
     badge.title = `${result.message || 'Lookup failed'}\nClick to try again.`;
+    badge.setAttribute('aria-label', `Lookup failed for ${badge.dataset.name}; press Enter to retry`);
   }
 
   /* ---------------------------------------------------------------- */
@@ -431,8 +455,11 @@
   function closePanel() {
     if (openPanel) {
       try { openPanel.__prbResizeObserver?.disconnect(); } catch { /* ok */ }
+      // Keyboard users were inside the panel; put them back on the badge.
+      const owner = openPanel.contains(document.activeElement) ? openPanel.__owner : null;
       openPanel.remove();
       openPanel = null;
+      if (owner?.isConnected) owner.focus({ preventScroll: true });
     }
   }
 
@@ -483,7 +510,7 @@
 
       ${
         result.confidence === 'low'
-          ? `<div class="${NS}-warn">Uncertain match — several professors share this name. Check the RMP page before trusting this.</div>`
+          ? `<div class="${NS}-warn">Uncertain match: several professors share this name. Check the RMP page before trusting this.</div>`
           : ''
       }
 
@@ -514,6 +541,9 @@
     document.body.appendChild(panel);
     openPanel = panel;
     position(panel, badge);
+    // The panel sits at the end of <body>, far from the badge in tab order.
+    panel.tabIndex = -1;
+    panel.focus({ preventScroll: true });
 
     // Content streams in after open; keep the panel inside the viewport as it
     // grows rather than positioning once against its empty loading state.
@@ -568,7 +598,7 @@
     panel.style.setProperty('top', `${top}px`, 'important');
   }
 
-  function renderHeuristicSummary(s, prose, source) {
+  function renderHeuristicSummary(s, prose) {
     const parts = [];
 
     if (prose) {
@@ -608,7 +638,7 @@
             .map(
               (c) => `<div class="${NS}-course">
                   <span class="${NS}-course-code">${esc(c.code)}</span>
-                  <span class="${NS}-course-stat">${c.avg !== null ? `${c.avg}/5` : '—'} · ${
+                  <span class="${NS}-course-stat">${c.avg !== null ? `${c.avg}/5` : '–'} · ${
                 c.count
               } review${c.count === 1 ? '' : 's'}</span>
                 </div>`
@@ -663,15 +693,23 @@
   }
 
   async function loadSummary(panel, teacher) {
-    const box = panel.querySelector(`.${NS}-summary`);
     const res = await send({ type: 'SUMMARIZE_TEACHER', teacher });
-
     if (!openPanel || !panel.isConnected) return;
+    paintSummary(panel, res?.ok ? res.result : null);
 
-    const data = res?.ok ? res.result : null;
+    // The statistics are on screen; the model's paragraph follows when ready.
+    if (res?.ok && res.result?.pending) {
+      const full = await send({ type: 'SUMMARIZE_TEACHER', teacher, wait: true });
+      if (!openPanel || !panel.isConnected) return;
+      if (full?.ok && full.result?.prose) paintSummary(panel, full.result);
+    }
+  }
+
+  function paintSummary(panel, data) {
+    const box = panel.querySelector(`.${NS}-summary`);
 
     if (data?.status === 'ok' && data.summary) {
-      const body = renderHeuristicSummary(data.summary, data.prose, data.source);
+      const body = renderHeuristicSummary(data.summary, data.prose);
 
       if (body) {
         box.dataset.state = 'ok';
@@ -679,7 +717,7 @@
           data.source === 'local' ? 'Written by Qwen2.5-0.5B on your machine' : null;
         const foot = engineLabel
           ? `${engineLabel} · figures computed from ${data.summary.reviewsAnalyzed} reviews`
-          : `Computed from ${data.summary.reviewsAnalyzed} reviews — quotes are verbatim`;
+          : `Computed from ${data.summary.reviewsAnalyzed} reviews. Quotes are verbatim.`;
         box.innerHTML = `${body}<div class="${NS}-sum-foot">${foot}</div>`;
 
         // Swap the recent comments for the most representative ones, skipping
@@ -704,9 +742,11 @@
 
     box.dataset.state = 'off';
     if (data?.status === 'insufficient') {
-      box.textContent = `Only ${data.count} written review${
-        data.count === 1 ? '' : 's'
-      } — read it below rather than trusting a summary.`;
+      box.textContent = data.count === 0
+        ? 'No written reviews to summarize.'
+        : `Only ${data.count} written review${data.count === 1 ? '' : 's'}. Read ${
+            data.count === 1 ? 'it' : 'them'
+          } below rather than trusting a summary.`;
     } else {
       box.textContent = 'Could not build a summary. The raw comments are below.';
     }
@@ -778,6 +818,7 @@
     removeAll(`.${NS}-rank`);
     const tab = document.querySelector(`.${NS}-rank-tab`);
     if (tab) tab.setAttribute('aria-expanded', 'false');
+    refreshRankTab(); // the arrow on the tab points down again
   }
 
   function ensureRankTab() {
@@ -959,9 +1000,10 @@
         }<span class="${NS}-rank-sub">${esc(t.department || '')}${
           t.campus ? ` · ${esc(t.campus)}` : ''
         }</span></span>
-          <span class="${NS}-rank-stats">${
-          t.avgDifficulty ? `diff ${t.avgDifficulty.toFixed(1)}` : ''
-        } · ${t.numRatings} ratings</span>
+          <span class="${NS}-rank-stats">${[
+          t.avgDifficulty ? `diff ${t.avgDifficulty.toFixed(1)}` : '',
+          `${t.numRatings} rating${t.numRatings === 1 ? '' : 's'}`,
+        ].filter(Boolean).join(' · ')}</span>
           <span class="${NS}-rank-score" data-rating="${cls}">${score}</span>
         </div>`;
       })
@@ -970,7 +1012,7 @@
     panel.innerHTML = `
       <div class="${NS}-rank-drag" title="Drag to move">
         <span class="${NS}-rank-grip">⋮⋮</span>
-        <span>Professors on this page — best first</span>
+        <span>Professors on this page, best first</span>
       </div>
       ${rows}`;
 
@@ -1028,7 +1070,10 @@
     const res = await send({ type: 'PARSE_BATCH', texts: fresh.map(([, t]) => t) });
     if (!res?.ok) {
       log('parse batch failed', res?.error);
-      for (const [el] of fresh) delete el.dataset[`${NS}Done`];
+      for (const [el] of fresh) {
+        processed.delete(el);
+        delete el.dataset[`${NS}Done`];
+      }
       return false;
     }
 
@@ -1042,9 +1087,8 @@
       for (const name of namesForEl) {
         made += 1;
         const badge = makeBadge(name);
-        el.appendChild(document.createTextNode(' '));
+        el.appendChild(makeGap());
         el.appendChild(badge);
-        unclip(el);
         lookup(name, badge, campusForBadge(el));
       }
     });
@@ -1061,6 +1105,23 @@
    * difference between one request per professor and five.
    */
   function campusForBadge(el) {
+    // In the results table the name sits several elements below its cell, so
+    // the campus is read from the row's own CAMPUS cell, not by counting parents.
+    const row = el.closest('tr, [role="row"]');
+    if (row) {
+      let cell = row.querySelector('[id$="_CAMPUS"]');
+      if (!cell) {
+        const heads = row.closest('table, [role="table"], [role="grid"], [role="treegrid"]')
+          ?.querySelector('thead tr, tr, [role="row"]')?.children;
+        const idx = Array.from(heads || []).findIndex((h) => /^\s*campus\s*$/i.test(h.textContent || ''));
+        cell = idx < 0 ? null : row.children[idx];
+      }
+      // An opened row's details span the columns, so that cell holds the name too.
+      const m = cell && !cell.contains(el) && (cell.textContent || '').match(CAMPUS_RE);
+      if (m) return m[1];
+    }
+
+    // The details of an opened row list the campus a few lines from the name.
     let node = el;
     for (let depth = 0; depth < 6 && node; depth += 1) {
       const text = (node.textContent || '');
@@ -1074,26 +1135,6 @@
   }
 
   const lookupCache = new Map();
-
-  /**
-   * PeopleSoft clips the instructor column with text-overflow: ellipsis. Adding
-   * a badge pushes the name past that limit, so the name itself gets truncated.
-   * Relax the clipping on the badged element only.
-   */
-  function unclip(el) {
-    try {
-      const cs = getComputedStyle(el);
-      if (cs.textOverflow === 'ellipsis' || cs.overflow === 'hidden' || cs.overflowX === 'hidden') {
-        el.style.setProperty('overflow', 'visible', 'important');
-        el.style.setProperty('text-overflow', 'clip', 'important');
-      }
-      if (cs.whiteSpace === 'nowrap') {
-        el.style.setProperty('white-space', 'normal', 'important');
-      }
-    } catch {
-      /* getComputedStyle can throw on detached nodes */
-    }
-  }
 
   function lookup(name, badge, campusHint) {
     const key = name.toLowerCase();
@@ -1117,7 +1158,7 @@
   let firstScan = true;
 
   // On pages with no instructor content, repeated full scans are pure waste.
-  // Each empty scan stretches the debounce: 250ms -> 1s -> 2.5s -> 5s cap.
+  // Empty scans stretch the debounce: 250ms -> 600ms -> 1.2s -> 2s cap.
   // Backoff only ever applies to pages that keep coming up empty. Anything
   // that looks like real results resets it (see resetBackoffFor), so the
   // moment search results render we are back to the fast path.
@@ -1162,19 +1203,24 @@
   function startObserver() {
     const isOurs = (node) =>
       node instanceof Element &&
-      (node.classList?.contains(`${NS}-badge`) || node.classList?.contains(`${NS}-panel`));
+      (node.classList?.contains(`${NS}-badge`) || node.classList?.contains(`${NS}-gap`) ||
+        node.classList?.contains(`${NS}-panel`));
 
     const observer = new MutationObserver((mutations) => {
+      let relevant = false;
       for (const m of mutations) {
         const target = m.target;
         if (target instanceof Element && target.closest(`.${NS}-badge, .${NS}-panel`)) continue;
         // Ignore mutations that are purely our own badge insertions.
         const added = Array.from(m.addedNodes);
         if (added.length && added.every((n) => isOurs(n) || n.nodeType === Node.TEXT_NODE)) continue;
-        if (added.some(looksLikeResults)) idleStreak = 0; // results just landed
-        queueScan();
-        return;
+        relevant = true;
+        // Results often land a record or two after a spinner swap, so keep
+        // looking until the backoff has been reset.
+        if (idleStreak === 0) break;
+        if (added.some(looksLikeResults)) { idleStreak = 0; break; } // results just landed
       }
+      if (relevant) queueScan();
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
@@ -1189,7 +1235,7 @@
       document.querySelectorAll(`[data-${NS}-done]`).forEach((el) => {
         delete el.dataset[`${NS}Done`];
       });
-      document.querySelectorAll(`.${NS}-badge`).forEach((b) => b.remove());
+      document.querySelectorAll(`.${NS}-badge`).forEach(dropBadge);
       collapseRank();
       removeAll(`.${NS}-rank-tab`);
       lookupCache.clear();
@@ -1199,7 +1245,7 @@
     if (msg?.type === 'PRB_RANK') {
       const tab = document.querySelector(`.${NS}-rank-tab`);
       if (tab && tab.dataset.ready === '1') expandRank();
-      sendResponse({ ok: true, ready: tab?.dataset.ready === '1' });
+      sendResponse({ ok: true, ready: tab?.dataset.ready === '1', loading: badgeCounts().loading });
       return false;
     }
     if (msg?.type === 'PRB_COUNT') {

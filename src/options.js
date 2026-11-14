@@ -28,7 +28,7 @@ function render() {
 $('save').addEventListener('click', async () => {
   const patch = {
     aiSummaries: $('aiSummaries').checked,
-    minRatingsForSummary: Math.max(1, Number($('minRatings').value) || 3),
+    minRatingsForSummary: Math.min(16, Math.max(1, Math.round(Number($('minRatings').value)) || 3)),
     hideWhenNotFound: $('hideWhenNotFound').checked,
     debug: $('debug').checked,
   };

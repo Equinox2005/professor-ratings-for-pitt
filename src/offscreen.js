@@ -1,7 +1,7 @@
 /**
  * Offscreen model host.
  *
- * Runs Qwen2.5-0.5B via Transformers.js + WebGPU: a ~300 MB one-time download,
+ * Runs Qwen2.5-0.5B via Transformers.js + WebGPU: a ~790 MB one-time download,
  * fully offline afterwards.
  *
  * The model only ever phrases facts computed by the heuristic analyzer. It is

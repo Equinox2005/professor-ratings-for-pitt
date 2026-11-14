@@ -34,10 +34,11 @@ function bigPage(courses = 40) {
   return html;
 }
 
-function run(html, { mutate = false, parseDelay = 1, mutateAt = [] } = {}) {
+function run(html, { mutate = false, parseDelay = 1, mutateAt = [], customSelectors = [], failParse = 0 } = {}) {
   const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`, {
     url: 'https://pitcsprd.csps.pitt.edu/psp/pitcsprd/EMPLOYEE/SA/s/WEBLIB_HCX_CM.H_CLASS_SEARCH.FieldFormula.IScript_Main',
     pretendToBeVisual: true,
+    runScripts: 'outside-only',
   });
   const { window } = dom;
   let parseCalls = 0;
@@ -50,9 +51,10 @@ function run(html, { mutate = false, parseDelay = 1, mutateAt = [] } = {}) {
       sendMessage(msg, cb) {
         let result;
         if (msg.type === 'GET_SETTINGS') {
-          result = { customSelectors: [], debug: false, hideWhenNotFound: false };
+          result = { customSelectors, debug: false, hideWhenNotFound: false };
         } else if (msg.type === 'PARSE_BATCH') {
           parseCalls += 1;
+          if (parseCalls <= failParse) { setTimeout(() => cb({ ok: false, error: 'boom' }), 1); return; }
           result = msg.texts.map((t) =>
             N.isPlaceholder(t) ? [] :
             N.splitInstructors(t)
@@ -67,7 +69,7 @@ function run(html, { mutate = false, parseDelay = 1, mutateAt = [] } = {}) {
     },
   };
 
-  const ctx = vm.createContext(window);
+  const ctx = dom.getInternalVMContext();
   ctx.chrome = chrome;
   window.chrome = chrome;
 
@@ -148,16 +150,30 @@ const ok = (c, l, d = '') => c ? pass++ : (fail++, console.log(`FAIL ${l}${d ? `
   ok(r.badges === 75, 'churn: exact badge count preserved', `got ${r.badges}`);
 }
 
+// --- a saved picker selector pointing inside a cell the defaults already find ---
+{
+  const r = await run(bigPage(10), { customSelectors: ['td > span'] });
+  ok(r.badges === 30 && r.maxPerCell === 1, 'custom selector: still one badge per cell',
+     `${r.badges} badges, max/cell ${r.maxPerCell}`);
+}
+
+// --- a failed PARSE_BATCH releases its claims, so the next scan retries ---
+{
+  const r = await run(bigPage(5), { failParse: 1, mutateAt: [600] });
+  ok(r.badges === 15, 'parse failure: cells are retried on the next scan', `got ${r.badges}`);
+}
+
 // --- responsiveness: results arriving after the page has been idle ---
 // Reproduces the real complaint: you sit on the search form picking term,
 // campus and subject. Every dropdown change is a mutation whose scan finds no
 // instructors, so the idle backoff climbs. Then you hit Search. If the backoff
 // still applies, the first badge is delayed by the full backoff interval --
 // which is exactly the ~5s that was reported.
-{
+async function idleThenResults({ removeFirst = false } = {}) {
   const dom = new JSDOM('<!DOCTYPE html><body><div id="form"></div><div id="results"></div></body>', {
     url: 'https://pitcsprd.csps.pitt.edu/psp/pitcsprd/EMPLOYEE/SA/s/WEBLIB_HCX_CM.H_CLASS_SEARCH.FieldFormula.IScript_Main',
     pretendToBeVisual: true,
+    runScripts: 'outside-only',
   });
   const { window } = dom;
   const chrome = {
@@ -180,7 +196,7 @@ const ok = (c, l, d = '') => c ? pass++ : (fail++, console.log(`FAIL ${l}${d ? `
       },
     },
   };
-  const ctx = vm.createContext(window);
+  const ctx = dom.getInternalVMContext();
   ctx.chrome = chrome;
   window.chrome = chrome;
   vm.runInContext(CONTENT, ctx);
@@ -197,6 +213,8 @@ const ok = (c, l, d = '') => c ? pass++ : (fail++, console.log(`FAIL ${l}${d ? `
   let renderedAt = 0;
   setTimeout(() => {
     renderedAt = Date.now();
+    // A spinner or filter going away in the same batch as the results.
+    if (removeFirst) form.firstElementChild.remove();
     window.document.getElementById('results').innerHTML = `
       <table><thead><tr><th>ROOM</th><th>INSTRUCTOR</th></tr></thead><tbody>
         <tr><td>124 Biddle Hall</td><td><span>Jennifer Sherwood</span></td></tr>
@@ -213,10 +231,21 @@ const ok = (c, l, d = '') => c ? pass++ : (fail++, console.log(`FAIL ${l}${d ? `
     }, 20);
     setTimeout(() => { clearInterval(t); resolve(null); }, 20000);
   });
+  return delay;
+}
 
+{
+  const delay = await idleThenResults();
   console.log(`results -> first badge: ${delay}ms (was up to 5000ms with the uncapped backoff)`);
   ok(delay !== null, 'responsiveness: badges appear after idle churn', 'never appeared');
   ok(delay !== null && delay < 1000, 'responsiveness: backoff resets when results render',
+     `took ${delay}ms`);
+}
+
+{
+  const delay = await idleThenResults({ removeFirst: true });
+  console.log(`results batched with a removal -> first badge: ${delay}ms`);
+  ok(delay !== null && delay < 1000, 'responsiveness: results in the same batch as a removal reset the backoff',
      `took ${delay}ms`);
 }
 

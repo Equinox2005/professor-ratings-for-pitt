@@ -87,7 +87,10 @@ const TEACHER_SEARCH_QUERY = `
 export async function searchTeachers(text, schoolID) {
   const data = await gql(TEACHER_SEARCH_QUERY, { text, schoolID });
   const edges = data?.newSearch?.teachers?.edges || [];
-  return edges.map((e) => e.node).filter(Boolean);
+  return edges
+    .map((e) => e.node)
+    .filter(Boolean)
+    .map((n) => ({ ...n, numRatings: Number(n.numRatings) || 0 }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -167,9 +170,8 @@ export async function getTeacher(id, count = 20) {
   const node = data?.node;
   if (!node) return null;
 
-  const ratings = (node.ratings?.edges || [])
-    .map((e) => e.node)
-    .filter((r) => r && typeof r.comment === 'string' && r.comment.trim().length > 0);
+  const reviews = (node.ratings?.edges || []).map((e) => e.node).filter(Boolean);
+  const ratings = reviews.filter((r) => typeof r.comment === 'string' && r.comment.trim().length > 0);
 
   return {
     id: node.id,
@@ -179,9 +181,10 @@ export async function getTeacher(id, count = 20) {
     department: node.department,
     avgRating: normalizeNum(node.avgRating),
     avgDifficulty: normalizeNum(node.avgDifficulty),
-    numRatings: node.numRatings ?? 0,
+    numRatings: Number(node.numRatings) || 0,
     wouldTakeAgainPercent: normalizeWta(node.wouldTakeAgainPercent),
-    tags: (node.teacherRatingTags || [])
+    // RMP can send an empty teacherRatingTags while the reviews carry their own.
+    tags: (node.teacherRatingTags?.length ? node.teacherRatingTags : countReviewTags(reviews))
       .slice()
       .sort((a, b) => (b.tagCount || 0) - (a.tagCount || 0))
       .slice(0, 6)
@@ -189,6 +192,22 @@ export async function getTeacher(id, count = 20) {
     ratings,
     url: `https://www.ratemyprofessors.com/professor/${node.legacyId}`,
   };
+}
+
+/**
+ * A review's ratingTags is one string, "Tough grader--Lecture heavy", and
+ * empty when the student picked none. Returns the same shape as
+ * teacherRatingTags, counted over the reviews that were fetched.
+ */
+function countReviewTags(reviews) {
+  const counts = new Map();
+  for (const r of reviews) {
+    for (const raw of String(r.ratingTags || '').split('--')) {
+      const tagName = raw.trim();
+      if (tagName) counts.set(tagName, (counts.get(tagName) || 0) + 1);
+    }
+  }
+  return Array.from(counts, ([tagName, tagCount]) => ({ tagName, tagCount }));
 }
 
 // RMP uses -1 as "no data" for several numeric fields.

@@ -25,13 +25,21 @@ function note(text, kind = '') {
   el.className = text ? `note ${kind}` : 'note hidden';
 }
 
+// The manifest's own match pattern, so "covered" means what the browser enforces.
+const CLASS_SEARCH = new RegExp(
+  '^' +
+    chrome.runtime.getManifest().content_scripts[0].matches[0]
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+);
+
 const LOCAL_COPY = {
   ready: ['AI ready', 'ok'],
   downloading: ['downloading…', 'warn'],
   loading: ['loading…', 'warn'],
   idle: ['not downloaded', 'warn'],
-  'no-webgpu': ['no WebGPU — stats only', 'bad'],
-  error: ['failed — stats only', 'bad'],
+  'no-webgpu': ['no WebGPU, stats only', 'bad'],
+  error: ['failed, stats only', 'bad'],
 };
 
 /** Ask the page whether the content script is alive. */
@@ -54,20 +62,21 @@ async function refresh() {
   $('url').textContent = url ? url.replace(/^https:\/\//, '').slice(0, 46) + (url.length > 54 ? '…' : '') : 'unknown';
   $('url').title = url;
 
-  const isPitt = /^https:\/\/([^/]*\.)?pitt\.edu\//i.test(url);
-  setPill($('site'), isPitt ? 'covered' : 'not covered', isPitt ? 'ok' : 'bad');
-
   const cs = tab?.id ? await pingContentScript(tab.id) : { alive: false, error: 'no tab' };
+  // The portal can show the class search in a frame under another address.
+  // The content script only runs in class-search frames, so an answer counts.
+  const onClassSearch = CLASS_SEARCH.test(url) || cs.alive;
+  setPill($('site'), onClassSearch ? 'covered' : 'not covered', onClassSearch ? 'ok' : 'bad');
   setPill($('cs'), cs.alive ? 'running' : 'not running', cs.alive ? 'ok' : 'bad');
   $('count').textContent = cs.alive ? cs.count : '–';
 
   note('');
-  if (url && !isPitt) {
-    note('This page is outside *.pitt.edu, so nothing can run here.', 'err');
-  } else if (isPitt && !cs.alive) {
+  if (url && !onClassSearch) {
+    note("This only runs on Pitt's class search, so nothing can run here.", 'err');
+  } else if (onClassSearch && !cs.alive) {
     note('Page is covered but the content script is not running. Reload the tab.', 'err');
   } else if (cs.alive && cs.count === 0) {
-    note('Running, but no instructors detected. Use the picker below.', 'warn');
+    note('No instructors on this page yet. Run a search first; if results are showing without badges, use the picker below.', 'warn');
   }
 
   const settingsRes = await send({ type: 'GET_SETTINGS' });
@@ -87,18 +96,30 @@ async function refresh() {
     setPill($('ai'), 'unavailable', 'bad');
   } else if (!aiOn) {
     setPill($('ai'), 'statistics only', 'ok');
+  } else if (ai.result.error) {
+    // The model host did not answer; say so instead of blaming WebGPU.
+    setPill($('ai'), 'unavailable', 'bad');
   } else {
     const l = ai.result.local || {};
-    const [text, kind] = LOCAL_COPY[l.status] || ['unknown', 'warn'];
+    // The model host unloads after three idle minutes and comes back as
+    // 'idle'. Once the download has been asked for, that means not loaded,
+    // which is also true when the download never finished.
+    const standby = l.status === 'idle' && settingsRes.ok && settingsRes.result.autoDownloadModel;
+    const [text, kind] = !l.webgpu
+      ? LOCAL_COPY['no-webgpu']
+      : standby
+        ? ['loads when needed', 'ok']
+        : LOCAL_COPY[l.status] || ['unknown', 'warn'];
     setPill($('ai'), text, kind);
 
     $('modelRow').style.display = 'flex';
     if (l.status === 'downloading') $('modelState').textContent = `${l.pct || 0}%`;
     else if (l.status === 'ready') $('modelState').textContent = 'cached, offline';
     else if (!l.webgpu) $('modelState').textContent = 'WebGPU not available';
+    else if (standby) $('modelState').textContent = 'not loaded';
     else $('modelState').textContent = 'not downloaded yet';
 
-    const needsDownload = l.webgpu && l.status !== 'ready' && l.status !== 'downloading';
+    const needsDownload = l.webgpu && !standby && l.status !== 'ready' && l.status !== 'downloading';
     $('download').style.display = needsDownload ? 'block' : 'none';
   }
 
@@ -109,6 +130,7 @@ async function refresh() {
 $('pick').addEventListener('click', async () => {
   const tab = await activeTab();
   if (!tab?.id) return note('No active tab.', 'err');
+  if (!CLASS_SEARCH.test(tab.url || '') && !(await pingContentScript(tab.id)).alive) return note("The picker only works on Pitt's class search.", 'err');
 
   try {
     await chrome.scripting.insertCSS({
@@ -130,7 +152,8 @@ $('rank').addEventListener('click', async () => {
   if (!tab?.id) return;
   chrome.tabs.sendMessage(tab.id, { type: 'PRB_RANK' }, (res) => {
     if (chrome.runtime.lastError) note('Not on a class search page.', 'err');
-    else if (res && res.ready === false) note('Still looking professors up — the top-of-page button unlocks when done.', 'warn');
+    else if (res && res.ready === false && !res.loading) note('No rated professors on this page.', 'warn');
+    else if (res && res.ready === false) note('Still looking professors up. The button at the top of the page turns on when they are done.', 'warn');
     else window.close();
   });
 });
@@ -146,8 +169,8 @@ $('rescan').addEventListener('click', async () => {
 
 $('clear').addEventListener('click', async () => {
   await send({ type: 'CLEAR_CACHE' });
+  await refresh();
   note('Cache cleared.');
-  refresh();
 });
 
 $('copy').addEventListener('click', async () => {
@@ -162,14 +185,14 @@ $('copy').addEventListener('click', async () => {
     `serviceWorker: ${settings.ok ? 'responding' : `not responding (${settings.error})`}`,
     `school: ${settings.ok ? settings.result.schoolLabel || settings.result.schoolName : '?'}`,
     `schools: ${settings.ok ? JSON.stringify((settings.result.schools || []).map((x) => x.name)) : '?'}`,
-    `ai: ${ai.ok ? `${ai.result.supported} / ${ai.result.availability}` : 'error'}`,
+    `ai: ${ai.ok ? ai.result.error || `${ai.result.local?.status}, webgpu ${ai.result.local?.webgpu}` : 'error'}`,
     `selectors: ${settings.ok ? JSON.stringify(settings.result.customSelectors) : '?'}`,
     `ua: ${navigator.userAgent}`,
   ].join('\n');
 
   try {
     await navigator.clipboard.writeText(report);
-    note('Diagnostics copied. Paste them to me.');
+    note('Diagnostics copied. Paste them into a GitHub issue.');
   } catch {
     note(report, 'err');
   }
@@ -178,15 +201,15 @@ $('copy').addEventListener('click', async () => {
 $('download').addEventListener('click', async () => {
   $('download').disabled = true;
   $('download').textContent = 'Starting download…';
-  note('Downloading Qwen2.5-0.5B. Keep this tab open; progress shows above.');
+  note('Downloading Qwen2.5-0.5B. Progress shows above.');
   const res = await send({ type: 'DOWNLOAD_MODEL' });
   if (!res.ok || res.result?.status === 'error') {
     note(`Download failed: ${res.result?.message || res.error}`, 'err');
     $('download').disabled = false;
     $('download').textContent = 'Retry download';
   } else {
+    await refresh();
     note('Model ready. Summaries are now written locally.');
-    refresh();
   }
 });
 

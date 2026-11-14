@@ -12,8 +12,8 @@ const PLACEHOLDERS = new Set([
   'multiple instructors', 'arranged', 'faculty',
 ]);
 
-const TITLES = /\b(dr|prof|professor|mr|mrs|ms|miss|sir|rev|hon)\.?\b/gi;
-const SUFFIXES = /\b(phd|ph\.d|md|m\.d|jr|sr|ii|iii|iv|esq|dds|jd|mba|ma|ms|msc|bs|ba)\.?\b/gi;
+const TITLES = /\b(dr|prof|professor|mr|mrs|ms|miss|sir|rev)\b\.?/gi;
+const SUFFIXES = /\b(phd|ph\.d|md|m\.d|jr|sr|ii|iii|iv|esq|dds|jd|mba|ms|msc|bs)\b\.?/gi;
 
 // Surname particles that belong to the last name, not the middle name.
 const PARTICLES = new Set([
@@ -131,7 +131,11 @@ export function splitInstructors(raw) {
 
   // Even number of comma parts where each is short -> likely paired
   // "Last1, First1, Last2, First2".
-  if (commas.length % 2 === 0 && commas.every((c) => c.split(/\s+/).length <= 3)) {
+  if (
+    commas.length % 2 === 0 &&
+    commas.every((c) => c.split(/\s+/).length <= 3) &&
+    commas.some((c) => !/\s/.test(c))
+  ) {
     const out = [];
     for (let i = 0; i < commas.length; i += 2) {
       out.push(`${commas[i]}, ${commas[i + 1]}`);
@@ -307,10 +311,10 @@ export function pickBest(parsed, nodes) {
 
 /** Stable cache key for a parsed name. */
 export function cacheKey(parsed, schoolID) {
-  return `${schoolID}|${parsed.last}|${parsed.first.slice(0, 1)}`;
+  return `${schoolID}|${parsed.last}|${parsed.first}`;
 }
 
-/** Query string to send to RMP search. Last name alone recalls best. */
+/** Query string to send to RMP search. */
 export function searchTerm(parsed) {
   return parsed.first ? `${parsed.first} ${parsed.last}` : parsed.last;
 }

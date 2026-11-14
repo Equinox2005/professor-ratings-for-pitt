@@ -5,8 +5,41 @@ import * as N from '../src/lib/names.js';
 
 const CONTENT = fs.readFileSync(new URL('../src/content.js', import.meta.url), 'utf8');
 
+/* The results table as the class search renders it today: a HighPoint CX grid
+   in MUI class names, with each cell's text five elements below its td (three
+   in the campus cell) and the page's own one-line clipping. Without
+   `campusId` the campus cell has no id and has to be found under its heading. */
+function realGrid({ campusId = true } = {}) {
+  const T = 'cx-MuiTypography-root cx-MuiTypography-body1 cx-MuiTypography-noWrap';
+  const text = (v) => `<span title="${v}" class=""><div class="${T}" aria-hidden="false">${v}</div></span>`;
+  const deep = (v) =>
+    `<div class="${T}"><div class="cx-MuiGrid-root cx-MuiGrid-container"><div class="cx-MuiGrid-root cx-MuiGrid-item">${text(v)}</div></div></div>`;
+  const row = (i, campus, section, name) => `
+        <tr class="cx-MuiTableRow-root" id="g-${i}" aria-level="1" aria-expanded="false">
+          <td role="gridcell" id="g-${i}-expand" aria-hidden="true"></td>
+          <td role="rowheader"${campusId ? ` id="g-${i}_CAMPUS"` : ''}><div class="${T}">${text(campus)}</div></td>
+          <td role="gridcell" id="g-${i}_CLASS_SECTION">${deep(section)}</td>
+          <td role="gridcell" id="g-${i}_INSTRUCTOR">${deep(name)}</td>
+          <td role="gridcell">${deep('27/75')}</td>
+        </tr>`;
+  return `
+    <style>.cx-MuiTypography-noWrap { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }</style>
+    <h2>INTRODUCTION TO PSYCHOLOGY | PSY 0010</h2>
+    <table class="cx-MuiTable-root" role="treegrid">
+      <thead><tr>
+        <th>Expand/Collapse</th><th role="columnheader">Campus</th><th role="columnheader">Section</th>
+        <th role="columnheader" id="g-INSTRUCTOR">Instructor</th><th role="columnheader">Status</th>
+      </tr></thead>
+      <tbody>${row(0, 'Pittsburgh Campus', '1010 - LEC (28834)', 'Eric Beeko')}${row(1, 'Greensburg Campus', '3010 - LEC (24039)', 'Kayla Heffernan')}${row(2, 'Pittsburgh Campus', '1011 - REC (28835)', 'To Be Announced')}
+      </tbody>
+    </table>`;
+}
+
 /* The four markup shapes PeopleSoft class search plausibly produces. */
 const FIXTURES = {
+  'pitt grid (real nesting)': realGrid(),
+  'pitt grid (real nesting, campus cell without an id)': realGrid({ campusId: false }),
+
   'table with Instructor column': `
     <table class="ps_grid">
       <thead><tr><th>Class</th><th>Days</th><th>Instructor</th><th>Room</th></tr></thead>
@@ -149,17 +182,20 @@ function runFixture(html) {
   const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`, {
     url: 'https://pitcsprd.csps.pitt.edu/psp/pitcsprd/EMPLOYEE/SA/s/WEBLIB_HCX_CM.H_CLASS_SEARCH.FieldFormula.IScript_Main',
     pretendToBeVisual: true,
+    runScripts: 'outside-only',
   });
 
   const { window } = dom;
   const lookups = [];
+  const hints = {}; // name -> the campus that went out with its lookup
+  let onMessage = null;
 
   // Minimal chrome mock. PARSE_BATCH is answered by the real names module so
   // this exercises the same code path the service worker runs.
   const chrome = {
     runtime: {
       lastError: null,
-      onMessage: { addListener: () => {} },
+      onMessage: { addListener: (fn) => { onMessage = fn; } },
       sendMessage(msg, cb) {
         let result;
         if (msg.type === 'GET_SETTINGS') {
@@ -175,6 +211,7 @@ function runFixture(html) {
           });
         } else if (msg.type === 'LOOKUP') {
           lookups.push(msg.name);
+          hints[msg.name] = msg.campusHint;
           result = { status: 'notfound', raw: msg.name };
         } else {
           result = {};
@@ -184,7 +221,7 @@ function runFixture(html) {
     },
   };
 
-  const ctx = vm.createContext(window);
+  const ctx = dom.getInternalVMContext();
   ctx.chrome = chrome;
   window.chrome = chrome;
 
@@ -196,7 +233,10 @@ function runFixture(html) {
       resolve({
         badgeNames: badges.map((b) => b.dataset.name),
         lookups,
+        hints,
         window,
+        // What the popup's "Rescan page" button sends.
+        rescan: () => new Promise((done) => onMessage({ type: 'PRB_RESCAN' }, {}, done)),
       });
     }, 700);
   });
@@ -205,6 +245,8 @@ function runFixture(html) {
 /* --------------------------------------------------------------- */
 
 const EXPECTED = {
+  'pitt grid (real nesting)': ['Eric Beeko', 'Kayla Heffernan'],
+  'pitt grid (real nesting, campus cell without an id)': ['Eric Beeko', 'Kayla Heffernan'],
   'table with Instructor column': ['Ramirez, Nicholas', 'Chen, Wei'],
   'label/value div pair': ['Garrison, Mark A', 'Okonkwo, Adaeze', 'Lin, Robert'],
   'inline label with colon': ['Van Der Berg, Anna'],
@@ -219,9 +261,11 @@ const EXPECTED = {
 
 let pass = 0;
 let fail = 0;
+const RUNS = {};
 
 for (const [label, html] of Object.entries(FIXTURES)) {
-  const { badgeNames } = await runFixture(html);
+  RUNS[label] = await runFixture(html);
+  const { badgeNames } = RUNS[label];
   const got = [...badgeNames].sort();
   const want = [...EXPECTED[label]].sort();
 
@@ -239,5 +283,43 @@ for (const [label, html] of Object.entries(FIXTURES)) {
   }
 }
 
+/* ---- the real nesting: the campus that goes out, and what the page keeps ---- */
+
+let checksPassed = 0;
+let checksFailed = 0;
+function check(cond, label, detail = '') {
+  if (cond) { checksPassed++; console.log(`PASS  ${label}`); }
+  else { checksFailed++; console.log(`FAIL  ${label}${detail ? `\n      ${detail}` : ''}`); }
+}
+
+for (const label of ['pitt grid (real nesting)', 'pitt grid (real nesting, campus cell without an id)']) {
+  const { hints } = RUNS[label];
+  check(hints['Eric Beeko'] === 'Pittsburgh' && hints['Kayla Heffernan'] === 'Greensburg',
+        `${label}: each lookup carries its own row's campus`, JSON.stringify(hints));
+}
+
+{
+  const { window, rescan } = RUNS['pitt grid (real nesting)'];
+  const hosts = () => Array.from(window.document.querySelectorAll('.prb-badge')).map((b) => b.parentElement);
+  const inPlace = () => hosts().length === 2 && hosts().every((h) => h.matches('span[title] > div') && h.firstChild.nodeType === 3);
+
+  check(inPlace() && hosts()[0].firstChild.nodeValue === 'Eric Beeko',
+        'real nesting: the badge follows the name inside the element that holds it');
+  // The page clips each cell to one line with an ellipsis, and it is a React
+  // app: its elements keep their own styles and its text node stays put.
+  check(hosts().every((h) => !h.hasAttribute('style') && window.getComputedStyle(h).whiteSpace === 'nowrap'),
+        "real nesting: the page's element keeps its own nowrap and ellipsis",
+        hosts().map((h) => h.getAttribute('style')).join(' | '));
+  check(hosts().every((h) => h.lastChild.previousSibling.className === 'prb-gap'),
+        'real nesting: a space that may wrap sits between the name and the badge');
+
+  await rescan();
+  await new Promise((r) => setTimeout(r, 100));
+  const gaps = window.document.querySelectorAll('.prb-gap').length;
+  check(inPlace() && gaps === 2, 'real nesting: a rescan puts each badge back in the same place',
+        `${hosts().length} badges, ${gaps} gaps`);
+}
+
 console.log(`\n${pass} fixtures passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+console.log(`${checksPassed} checks passed, ${checksFailed} failed`);
+process.exit(fail || checksFailed ? 1 : 0);

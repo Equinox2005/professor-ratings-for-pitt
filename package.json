@@ -1,6 +1,13 @@
 {
-  "dependencies": {
-    "@huggingface/transformers": "^4.2.0",
+  "name": "professor-ratings-for-pitt",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "e2e": "node tests/e2e/run.js",
+    "demo": "node tests/e2e/demo.js"
+  },
+  "devDependencies": {
     "jsdom": "^30.0.1"
   }
 }

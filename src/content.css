@@ -22,6 +22,11 @@
   transition: transform 120ms ease, box-shadow 120ms ease !important;
 }
 
+/* The page draws each cell on one line (nowrap). A space that may wrap, put
+   before the badge, lets the badge drop to a second line without the name
+   ever breaking or losing the page's ellipsis. */
+.prb-gap { white-space: normal !important; }
+
 /* Once the rating loads the colour carries the meaning, and the instructor
    column is tight, so drop the dot. */
 .prb-badge[data-state="ok"] .prb-dot,
@@ -93,6 +98,9 @@
   animation: prb-in 120ms ease-out !important;
 }
 
+/* Focus moves here when the panel opens; the ring belongs on its controls. */
+.prb-panel:focus { outline: none !important; }
+
 @keyframes prb-in {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }
@@ -137,6 +145,10 @@
   padding: 0 2px !important;
 }
 .prb-close:hover { color: #ffffff !important; }
+.prb-close:focus-visible {
+  outline: 2px solid #ffb81c !important;
+  outline-offset: 2px !important;
+}
 
 .prb-warn {
   margin: 0 !important;
@@ -173,6 +185,7 @@
   letter-spacing: 0.06em !important;
   color: #6b7480 !important;
   margin-top: 2px !important;
+  white-space: nowrap !important;
 }
 
 .prb-tags {
@@ -217,19 +230,10 @@
   font-style: italic !important;
 }
 
-.prb-sum-row { margin-bottom: 5px !important; }
-
-.prb-sum-key {
-  display: inline-block !important;
-  min-width: 62px !important;
-  font-weight: 700 !important;
-  color: #003594 !important;
-}
-
 .prb-sum-foot {
   margin-top: 7px !important;
   font-size: 10px !important;
-  color: #8b939d !important;
+  color: #6b7480 !important;
 }
 
 .prb-comment {
@@ -248,7 +252,7 @@
   font-size: 11px !important;
 }
 
-.prb-empty { color: #8b939d !important; font-size: 12px !important; font-style: italic !important; }
+.prb-empty { color: #6b7480 !important; font-size: 12px !important; font-style: italic !important; }
 
 .prb-link {
   display: block !important;
@@ -300,7 +304,7 @@
 
 .prb-aspect-meta {
   font-size: 10px !important;
-  color: #8b939d !important;
+  color: #6b7480 !important;
   white-space: nowrap !important;
 }
 
@@ -348,7 +352,7 @@
 .prb-course-stat { color: #6b7480 !important; white-space: nowrap !important; }
 
 /* Heuristic mode carries its own left rules, so drop the wrapper's. */
-.prb-summary:has(.prb-headline) {
+.prb-summary:has(.prb-headline, .prb-prose) {
   border-left: none !important;
   padding-left: 0 !important;
 }
@@ -397,21 +401,6 @@
   animation: prb-in 120ms ease-out !important;
 }
 
-.prb-rank-head {
-  position: sticky !important;
-  top: 0 !important;
-  display: flex !important;
-  justify-content: space-between !important;
-  align-items: center !important;
-  gap: 10px !important;
-  padding: 12px 14px !important;
-  background: #003594 !important;
-  color: #ffffff !important;
-  font-weight: 700 !important;
-  font-size: 13px !important;
-  border-radius: 9px 9px 0 0 !important;
-}
-
 .prb-rank-row {
   display: grid !important;
   grid-template-columns: 22px 1fr auto 44px !important;
@@ -424,14 +413,14 @@
 .prb-rank-row:hover { background: #f6f8fb !important; }
 .prb-rank-row:focus-visible { outline: 2px solid #003594 !important; outline-offset: -2px !important; }
 
-.prb-rank-pos { font-weight: 700 !important; color: #8b939d !important; font-size: 11px !important; }
+.prb-rank-pos { font-weight: 700 !important; color: #6b7480 !important; font-size: 11px !important; }
 
 .prb-rank-name { font-weight: 600 !important; font-size: 12.5px !important; }
 .prb-rank-sub {
   display: block !important;
   font-weight: 400 !important;
   font-size: 10.5px !important;
-  color: #8b939d !important;
+  color: #6b7480 !important;
 }
 .prb-rank-unsure { color: #b57d13 !important; font-weight: 700 !important; }
 
@@ -453,14 +442,6 @@
 .prb-rank-score[data-rating="good"] { background: #e4f4e9 !important; color: #1d7a45 !important; }
 .prb-rank-score[data-rating="mid"]  { background: #fdf3dd !important; color: #8a5f0a !important; }
 .prb-rank-score[data-rating="poor"] { background: #fbe6e6 !important; color: #b32626 !important; }
-
-.prb-rank-empty, .prb-rank-note {
-  padding: 14px !important;
-  color: #6b7480 !important;
-  font-size: 12px !important;
-  font-style: italic !important;
-}
-.prb-rank-note { border-top: 1px solid #eef1f6 !important; padding: 9px 14px !important; }
 
 .prb-flash {
   animation: prb-flash-anim 0.8s ease-in-out 2 !important;

@@ -59,14 +59,27 @@ function dedup(key, fn) {
 /* School resolution                                                   */
 /* ------------------------------------------------------------------ */
 
+// RMP's family for Pitt holds the four regional campuses and a second listing
+// of the main campus, so a count of the other entries would not be a count of
+// campuses.
+function familyLabel(schools) {
+  return schools.length > 1
+    ? `${schools[0].name} + regional campus${schools.length > 2 ? 'es' : ''}`
+    : schools[0].name;
+}
+
 async function resolveSchools(force = false) {
   const settings = await getSettings();
-  if (Array.isArray(settings.schools) && settings.schools.length && !force) return settings;
+  if (Array.isArray(settings.schools) && settings.schools.length && !force) {
+    // An install from before the count was dropped still has it saved.
+    const label = familyLabel(settings.schools);
+    return settings.schoolLabel === label ? settings : setSettings({ schoolLabel: label });
+  }
 
   const base = names.familyBase(settings.schoolName);
   const cached = await cache.get(`schools:${base}`);
   if (cached && !force) {
-    return setSettings({ schools: cached.schools, schoolLabel: cached.label });
+    return setSettings({ schools: cached.schools, schoolLabel: familyLabel(cached.schools) });
   }
 
   const results = await schedule(() => rmp.searchSchools(settings.schoolName));
@@ -90,13 +103,9 @@ async function resolveSchools(force = false) {
   });
 
   const schools = pool.slice(0, 8).map((r) => ({ id: r.id, name: r.name }));
-  const label =
-    schools.length > 1
-      ? `${schools[0].name} + ${schools.length - 1} regional campus${schools.length > 2 ? 'es' : ''}`
-      : schools[0].name;
 
-  await cache.set(`schools:${base}`, { schools, label }, cache.TTL.SCHOOL);
-  return setSettings({ schools, schoolLabel: label });
+  await cache.set(`schools:${base}`, { schools }, cache.TTL.SCHOOL);
+  return setSettings({ schools, schoolLabel: familyLabel(schools) });
 }
 
 /* ------------------------------------------------------------------ */
@@ -173,7 +182,7 @@ async function lookupInstructor(rawName, campusHint) {
           department: n.department,
           avgRating: normalizeNum(n.avgRating),
           avgDifficulty: normalizeNum(n.avgDifficulty),
-          numRatings: n.numRatings ?? 0,
+          numRatings: n.numRatings,
           wouldTakeAgainPercent: normalizeWta(n.wouldTakeAgainPercent),
           url: `https://www.ratemyprofessors.com/professor/${n.legacyId}`,
           campus: campusLabel,
@@ -214,13 +223,8 @@ function orderByCampus(schools, hint) {
 
 /** One campus search, with each candidate tagged by the school it came from. */
 async function searchAt(school, term) {
-  try {
-    const nodes = await schedule(() => rmp.searchTeachers(term, school.id));
-    return nodes.map((n) => ({ ...n, __campus: n.school?.name || school.name }));
-  } catch (err) {
-    console.warn('[PRB] campus search failed', school.name, err.message);
-    return [];
-  }
+  const nodes = await schedule(() => rmp.searchTeachers(term, school.id));
+  return nodes.map((n) => ({ ...n, __campus: n.school?.name || school.name }));
 }
 
 /** Full detail (tags + comments). Fetched only when a panel opens. */
@@ -248,9 +252,6 @@ async function teacherDetail(teacherId) {
 /* ------------------------------------------------------------------ */
 
 const OFFSCREEN_PATH = 'src/offscreen.html';
-
-// Set once a model has answered successfully, so later calls skip the gate.
-let modelReady = false;
 
 async function hasOffscreen() {
   if (!chrome.runtime.getContexts) return false;
@@ -306,25 +307,25 @@ async function askOffscreen(payload) {
 async function aiStatus() {
   try {
     const res = await askOffscreen({ type: 'AI_STATUS' });
-    return res || { nano: { supported: false }, local: { status: 'idle' } };
+    return res || { local: { status: 'idle' } };
   } catch (err) {
-    return { error: String(err.message || err), nano: { supported: false }, local: { status: 'idle' } };
+    return { error: String(err.message || err), local: { status: 'idle' } };
   }
 }
 
 /** Explicit user action from the popup: pull the model down now. */
 async function downloadModel() {
   await setSettings({ autoDownloadModel: true });
-  const res = await askOffscreen({ type: 'WARMUP' });
-  if (res?.status === 'ok') modelReady = true;
-  return res;
+  return askOffscreen({ type: 'WARMUP' });
 }
 
-async function summarize(teacher) {
+async function summarize(teacher, wait = false) {
   const settings = await getSettings();
 
   const comments = (teacher.ratings || []).filter((r) => r.comment && r.comment.trim());
-  if (comments.length < settings.minRatingsForSummary) {
+  // trimForCache keeps at most 16 comments, so a minimum above 16 would block
+  // every summary.
+  if (comments.length < Math.min(16, settings.minRatingsForSummary)) {
     return { status: 'insufficient', count: comments.length };
   }
 
@@ -339,13 +340,15 @@ async function summarize(teacher) {
   const cached = await cache.get(key);
   if (cached) return { ...base, source: cached.engine, prose: cached.text };
 
-  // Never trigger a 300 MB download implicitly; the user opts in from the
-  // popup. autoDownloadModel is set once the user has consented, and persists;
-  // modelReady is only an in-memory fast path (the offscreen document unloads
-  // itself when idle, so it can go stale in either direction).
+  // Never trigger a ~790 MB download implicitly; the user opts in from the
+  // popup. autoDownloadModel is set once the user has consented, and persists.
   if (!settings.autoDownloadModel) {
     return base;
   }
+
+  // The panel paints the statistics first and asks again for the paragraph,
+  // so a model that is still downloading or loading never holds them back.
+  if (!wait) return { ...base, pending: true };
 
   return dedup(key, async () => {
     try {
@@ -355,7 +358,6 @@ async function summarize(teacher) {
         analysis,
       });
       if (res?.status === 'ok' && res.text) {
-        modelReady = true;
         await cache.set(key, { engine: res.engine, text: res.text }, cache.TTL.SUMMARY);
         return { ...base, source: res.engine, prose: res.text };
       }
@@ -384,19 +386,13 @@ function trimForCache(detail) {
   };
 }
 
-// Keep the message payload small -- 16 full rating objects is a lot of noise.
+// Only the figures the fact sheet prints. The model never sees a review.
 function slimTeacher(teacher) {
   return {
-    id: teacher.id,
-    department: teacher.department,
     avgRating: teacher.avgRating,
     avgDifficulty: teacher.avgDifficulty,
     numRatings: teacher.numRatings,
-    tags: teacher.tags,
-    ratings: (teacher.ratings || []).slice(0, 16).map((r) => ({
-      class: r.class,
-      comment: String(r.comment || '').slice(0, 600),
-    })),
+    wouldTakeAgainPercent: teacher.wouldTakeAgainPercent,
   };
 }
 
@@ -426,7 +422,7 @@ const HANDLERS = {
     }),
 
   LOOKUP: ({ name, campusHint }) => lookupInstructor(name, campusHint),
-  SUMMARIZE_TEACHER: ({ teacher }) => summarize(teacher),
+  SUMMARIZE_TEACHER: ({ teacher, wait }) => summarize(teacher, wait),
   TEACHER_DETAIL: ({ teacherId }) => teacherDetail(teacherId),
   AI_STATUS: () => aiStatus(),
   DOWNLOAD_MODEL: () => downloadModel(),

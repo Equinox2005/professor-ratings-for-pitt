@@ -8,7 +8,7 @@ export const DEFAULTS = {
   // full statistics, aspect breakdown, and verbatim quotes -- those are always
   // computed locally and never depend on a model.
   aiSummaries: true,
-  autoDownloadModel: false, // require an explicit click before a ~300 MB pull
+  autoDownloadModel: false, // require an explicit click before a ~790 MB pull
   minRatingsForSummary: 3, // don't summarize 1 comment, it's just the comment
   customSelectors: [],     // CSS selectors added by the element picker
   debug: false,

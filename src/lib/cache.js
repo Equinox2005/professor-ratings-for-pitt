@@ -5,7 +5,7 @@
  * the shape of a stored record or the matching logic.
  */
 
-const SCHEMA = 2; // v2: multi-campus lookups; invalidates single-school misses
+const SCHEMA = 3; // v3: keyed by the whole first name; v2 entries could hold the wrong person
 const PREFIX = `c${SCHEMA}:`;
 const MAX_ENTRIES = 1500;
 
@@ -44,7 +44,7 @@ export async function clear() {
 
 export async function stats() {
   const all = await chrome.storage.local.get(null);
-  const keys = Object.keys(all).filter((k) => k.startsWith(PREFIX));
+  const keys = Object.keys(all).filter((k) => k.startsWith(`${PREFIX}prof:`));
   let expired = 0;
   const now = Date.now();
   for (const k of keys) {
